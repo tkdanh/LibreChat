@@ -176,8 +176,8 @@ function getDefaultHandlers({ res, aggregateContent, toolEndCallback, collectedU
           sendEvent(res, { event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
           sendEvent(res, { event, data });
-        } else if (!metadata?.hide_sequential_outputs) {
-          sendEvent(res, { event, data });
+        // } else if (!metadata?.hide_sequential_outputs) {
+        //   sendEvent(res, { event, data });
         } else {
           const agentName = metadata?.name ?? 'Agent';
           const isToolCall = data?.stepDetails.type === StepTypes.TOOL_CALLS;

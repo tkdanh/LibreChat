@@ -26,6 +26,8 @@ import { createMemoryModel } from './memory';
 import { createAccessRoleModel } from './accessRole';
 import { createAclEntryModel } from './aclEntry';
 import { createGroupModel } from './group';
+import { createChatGroupModel } from './chatGroup';
+import { createGroupMessageModel } from './groupMessage';
 
 /**
  * Creates all database models for all collections
@@ -60,5 +62,7 @@ export function createModels(mongoose: typeof import('mongoose')) {
     AccessRole: createAccessRoleModel(mongoose),
     AclEntry: createAclEntryModel(mongoose),
     Group: createGroupModel(mongoose),
+    ChatGroup: createChatGroupModel(mongoose),
+    GroupMessage: createGroupMessageModel(mongoose),
   };
 }

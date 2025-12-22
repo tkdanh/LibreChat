@@ -25,6 +25,9 @@ export * from './prompts';
 export * from './accessRole';
 export * from './aclEntry';
 export * from './group';
+/* Chat Groups */
+export * from './chatGroup';
+export * from './groupMessage';
 /* Web */
 export * from './web';
 /* MCP Servers */

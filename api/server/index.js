@@ -157,6 +157,7 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/chat-groups', routes.chatGroups);
 
   app.use(ErrorController);
 
@@ -200,7 +201,11 @@ startServer();
 let messageCount = 0;
 process.on('uncaughtException', (err) => {
   if (!err.message.includes('fetch failed')) {
-    logger.error('There was an uncaught error:', err);
+    logger.error('1 There was an uncaught error:', {
+      name: err?.name,
+      message: err?.message,
+      stack: err?.stack,
+    });
   }
 
   if (err.message && err.message?.toLowerCase()?.includes('abort')) {

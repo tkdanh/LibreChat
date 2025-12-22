@@ -13,6 +13,34 @@ const {
 } = require('./Message');
 const { getConvoTitle, getConvo, saveConvo, deleteConvos } = require('./Conversation');
 const { getPreset, getPresets, savePreset, deletePresets } = require('./Preset');
+const {
+  // Chat Group operations
+  createChatGroup,
+  getChatGroup,
+  getUserChatGroups,
+  updateChatGroup,
+  deleteChatGroup,
+  // Member operations
+  addGroupMember,
+  removeGroupMember,
+  updateMemberRole,
+  addBotToGroup,
+  // Message operations
+  createGroupMessage,
+  getGroupMessages,
+  updateGroupMessage,
+  updateGroupMessageById,
+  deleteGroupMessage,
+  // Reactions and interactions
+  addMessageReaction,
+  markMessagesAsRead,
+  getUnreadCount,
+  pinMessage,
+  getPinnedMessages,
+  // Search
+  searchGroupMessages,
+  getMentionedMessages,
+} = require('./ChatGroup');
 const { File } = require('~/db/models');
 
 const seedDatabase = async () => {
@@ -43,6 +71,29 @@ module.exports = {
   getPresets,
   savePreset,
   deletePresets,
+
+  // Chat Group exports
+  createChatGroup,
+  getChatGroup,
+  getUserChatGroups,
+  updateChatGroup,
+  deleteChatGroup,
+  addGroupMember,
+  removeGroupMember,
+  updateMemberRole,
+  addBotToGroup,
+  createGroupMessage,
+  getGroupMessages,
+  updateGroupMessage,
+  updateGroupMessageById,
+  deleteGroupMessage,
+  addMessageReaction,
+  markMessagesAsRead,
+  getUnreadCount,
+  pinMessage,
+  getPinnedMessages,
+  searchGroupMessages,
+  getMentionedMessages,
 
   Files: File,
 };

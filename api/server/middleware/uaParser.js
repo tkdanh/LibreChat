@@ -21,11 +21,11 @@ async function uaParser(req, res, next) {
   const { NON_BROWSER_VIOLATION_SCORE: score = 20 } = process.env;
   const ua = uap(req.headers['user-agent']);
 
-  if (!ua.browser.name) {
-    const type = ViolationTypes.NON_BROWSER;
-    await logViolation(req, res, type, { type }, score);
-    return handleError(res, { message: 'Illegal request' });
-  }
+  // if (!ua.browser.name) {
+  //   const type = ViolationTypes.NON_BROWSER;
+  //   await logViolation(req, res, type, { type }, score);
+  //   return handleError(res, { message: 'Illegal request' });
+  // }
   next();
 }
 

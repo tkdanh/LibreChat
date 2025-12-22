@@ -1,7 +1,6 @@
 const express = require('express');
 const { isEnabled } = require('@librechat/api');
 const {
-  uaParser,
   checkBan,
   requireJwtAuth,
   messageIpLimiter,
@@ -18,7 +17,6 @@ const router = express.Router();
 
 router.use(requireJwtAuth);
 router.use(checkBan);
-router.use(uaParser);
 
 router.use('/', v1);
 

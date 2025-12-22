@@ -24,3 +24,5 @@ export { default as transactionSchema } from './transaction';
 export { default as userSchema } from './user';
 export { default as memorySchema } from './memory';
 export { default as groupSchema } from './group';
+export { default as chatGroupSchema } from './chatGroup';
+export { default as groupMessageSchema } from './groupMessage';
