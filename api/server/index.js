@@ -35,16 +35,31 @@ const routes = require('./routes');
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
 // Allow PORT=0 to be used for automatic free port assignment
-const port = 3080;// isNaN(Number(PORT)) ? 3080 : Number(PORT);
+const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || '0.0.0.0';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
 
+// Debug logging for Cloud Run
+console.log(`[STARTUP] PORT env: ${PORT}, using port: ${port}`);
+console.log(`[STARTUP] HOST env: ${HOST}, using host: ${host}`);
+console.log(`[STARTUP] MONGO_URI exists: ${!!process.env.MONGO_URI}`);
+
 const app = express();
+
+// Early health check - responds before DB connection (for Cloud Run)
+app.get('/health', (_req, res) => res.status(200).send('OK'));
+
+// Start listening IMMEDIATELY so Cloud Run health check passes
+const server = app.listen(port, host, () => {
+  console.log(`[STARTUP] Server listening on ${host}:${port}`);
+});
 
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
     axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
   }
+  
+  console.log('[STARTUP] Connecting to MongoDB...');
   await connectDb();
 
   logger.info('Connected to MongoDB');
@@ -76,8 +91,6 @@ const startServer = async () => {
       indexHTML = indexHTML.replace(/base href="\/"/, `base href="${baseHref}"`);
     }
   }
-
-  app.get('/health', (_req, res) => res.status(200).send('OK'));
 
   /* Middleware */
   app.use(noIndex);
@@ -177,24 +190,20 @@ const startServer = async () => {
     res.send(updatedIndexHtml);
   });
 
-  app.listen(port, host, async (err) => {
-    if (err) {
-      logger.error('Failed to start server:', err);
-      process.exit(1);
-    }
+  // Server already started above, just run post-startup tasks
+  if (host === '0.0.0.0') {
+    logger.info(
+      `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
+    );
+  } else {
+    logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
+  }
 
-    if (host === '0.0.0.0') {
-      logger.info(
-        `Server listening on all interfaces at port ${port}. Use http://localhost:${port} to access it`,
-      );
-    } else {
-      logger.info(`Server listening at http://${host == '0.0.0.0' ? 'localhost' : host}:${port}`);
-    }
-
-    await initializeMCPs();
-    await initializeOAuthReconnectManager();
-    await checkMigrations();
-  });
+  await initializeMCPs();
+  await initializeOAuthReconnectManager();
+  await checkMigrations();
+  
+  console.log('[STARTUP] Application fully initialized');
 };
 
 startServer();
