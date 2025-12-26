@@ -5,7 +5,7 @@ const { isEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 
 const mongoose = require('mongoose');
-const MONGO_URI = process.env.MONGO_URI || 27017;
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/LibreChat';
 
 if (!MONGO_URI) {
   throw new Error('Please define the MONGO_URI environment variable');
