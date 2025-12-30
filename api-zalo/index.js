@@ -4,18 +4,23 @@ const axios = require("axios");
 const { v4: uuidv4 } = require("uuid");
 const fs = require("fs");
 
+// Global ZALOBOT_TOKEN (can be updated via /token command)
+let ZALOBOT_TOKEN = process.env.ZALOBOT_TOKEN;
+// Global API_TOKEN (can be updated via /api_token command)
+let API_TOKEN = process.env.API_TOKEN;
+
 // Validate required environment variables
-if (!process.env.ZALOBOT_TOKEN) {
+if (!ZALOBOT_TOKEN) {
   console.error("Error: ZALOBOT_TOKEN is not set in environment variables");
   process.exit(1);
 }
 
-if (!process.env.API_TOKEN) {
+if (!API_TOKEN) {
   console.error("Error: API_TOKEN is not set in environment variables");
   process.exit(1);
 }
 
-const bot = new ZaloBot(process.env.ZALOBOT_TOKEN, {
+const bot = new ZaloBot(ZALOBOT_TOKEN, {
   polling: true
 });
 
@@ -47,6 +52,28 @@ bot.onText(/\/echo (.+)/, (msg, match) => {
     bot.sendMessage(msg.chat.id, `Bạn vừa nói: ${message}`);
   } else {
     bot.sendMessage(msg.chat.id, "Hãy nhập gì đó sau lệnh /echo");
+  }
+});
+
+bot.onText(/\/token (.+)/, (msg, match) => {
+  const newToken = match[1];
+  if (newToken) {
+    ZALOBOT_TOKEN = newToken;
+    console.log("ZALOBOT_TOKEN updated to:", ZALOBOT_TOKEN);
+    bot.sendMessage(msg.chat.id, `✅ ZALOBOT_TOKEN đã được cập nhật thành công!`);
+  } else {
+    bot.sendMessage(msg.chat.id, "❌ Vui lòng nhập token sau lệnh /token");
+  }
+});
+
+bot.onText(/\/api_token (.+)/, (msg, match) => {
+  const newToken = match[1];
+  if (newToken) {
+    API_TOKEN = newToken;
+    console.log("API_TOKEN updated to:", API_TOKEN);
+    bot.sendMessage(msg.chat.id, `✅ API_TOKEN đã được cập nhật thành công!`);
+  } else {
+    bot.sendMessage(msg.chat.id, "❌ Vui lòng nhập token sau lệnh /api_token");
   }
 });
 
@@ -154,7 +181,7 @@ bot.on("message", async (msg) => {
       }
     };
 
-    console.log('process.env.API_TOKEN', process.env.API_TOKEN);
+    console.log('API_TOKEN', API_TOKEN);
     
     // Get API URL from environment variable, default to localhost for local development
     const API_URL = process.env.API_URL || "http://localhost:3080";
@@ -162,14 +189,29 @@ bot.on("message", async (msg) => {
     
     console.log('Calling API endpoint:', apiEndpoint);
     
-    // Call the API with streaming response
-    const response = await axios.post(
+    // Step 1: Call initial API to get stream URL
+    const initialResponse = await axios.post(
       apiEndpoint,
       payload,
       {
         headers: {
-          "Authorization": "Bearer " + process.env.API_TOKEN,
+          "Authorization": "Bearer " + API_TOKEN,
           "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      }
+    );
+    
+    // Extract streamId from response
+    const { streamId, conversationId } = initialResponse.data;
+    console.log('Stream ID:', streamId, 'Conversation ID:', conversationId);
+    
+    // Step 2: Call the stream URL to get actual response
+    const streamResponse = await axios.get(
+      `${API_URL}/api/agents/chat/stream/${streamId}`,
+      {
+        headers: {
+          "Authorization": "Bearer " + API_TOKEN,
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         },
         responseType: 'stream'
@@ -182,8 +224,10 @@ bot.on("message", async (msg) => {
     
     // Process the stream
     await new Promise((resolve, reject) => {
-      response.data.on('data', (chunk) => {
-        const lines = chunk.toString().split('\n');
+      streamResponse.data.on('data', (chunk) => {
+        const chunkStr = chunk.toString();
+
+        const lines = chunkStr.split('\n');
         
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -194,7 +238,6 @@ bot.on("message", async (msg) => {
             
             try {
               const parsed = JSON.parse(data);
-              console.log("Stream chunk:", parsed);
               
               // Accumulate the message text from different possible locations
               if (parsed.responseMessage?.content?.[0]?.text) {
@@ -215,18 +258,17 @@ bot.on("message", async (msg) => {
               
             } catch (e) {
               // Skip invalid JSON
-              console.log("Skipping non-JSON line:", data.substring(0, 50));
             }
           }
         }
       });
       
-      response.data.on('end', () => {
+      streamResponse.data.on('end', () => {
         console.log("Stream ended");
         resolve();
       });
       
-      response.data.on('error', (error) => {
+      streamResponse.data.on('error', (error) => {
         console.error("Stream error:", error);
         reject(error);
       });
