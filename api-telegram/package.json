@@ -1,0 +1,28 @@
+{
+  "name": "@librechat/api-telegram",
+  "version": "1.0.0",
+  "description": "Telegram Bot integration for LibreChat",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "check-env": "node check-env.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "librechat"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

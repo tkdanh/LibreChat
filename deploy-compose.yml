@@ -93,5 +93,26 @@ services:
         target: /app/.env
     command: sh -c "npm install && node index.js"
 
+  api-telegram:
+    container_name: LibreChat-TelegramBot
+    image: node:18-alpine
+    restart: always
+    working_dir: /app
+    depends_on:
+      - api
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - API_TOKEN=${API_TOKEN}
+      - API_URL=http://api:3080
+      - NODE_ENV=production
+    volumes:
+      - type: bind
+        source: ./api-telegram
+        target: /app
+      - type: bind
+        source: ./.env
+        target: /app/.env
+    command: sh -c "npm install && node index.js"
+
 volumes:
   pgdata2:
