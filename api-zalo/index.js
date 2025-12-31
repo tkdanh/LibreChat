@@ -110,6 +110,125 @@ bot.onText(/info/, (msg) => {
   bot.sendMessage(msg.chat.id, infoMessage);
 });
 
+// Command: /agent - List all AI agents
+bot.onText(/\/agent/, async (msg) => {
+  try {
+    const API_URL = process.env.API_URL || "http://localhost:3080";
+    const response = await axios.get(
+      `${API_URL}/api/agents?requiredPermission=1`,
+      {
+        headers: {
+          "Authorization": "Bearer " + API_TOKEN,
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      }
+    );
+    
+    // Handle different response structures (array or object with agents property)
+    const data = response.data;
+    console.log('Agents API response:', JSON.stringify(data).substring(0, 500));
+    
+    if (Array.isArray(data)) {
+      agentsList = data;
+    } else if (data && Array.isArray(data.data)) {
+      agentsList = data.data;
+    } else {
+      agentsList = [];
+    }
+    
+    if (agentsList.length === 0) {
+      bot.sendMessage(msg.chat.id, "❌ Không có agent nào được tìm thấy.");
+      return;
+    }
+    
+    let agentListMessage = "🤖 **Danh sách AI Agents:**\n\n";
+    agentsList.forEach((agent, index) => {
+      agentListMessage += `${index + 1}. **${agent.name}**\n   ID: \`${agent.id}\`\n`;
+      if (agent.description) {
+        agentListMessage += `   📝 ${agent.description}\n`;
+      }
+      agentListMessage += "\n";
+    });
+    
+    agentListMessage += "\n💡 Sử dụng /mode_agent <tên_agent> để chọn agent";
+    agentListMessage += "\n💡 Sử dụng /mode_openai để dùng OpenAI mặc định";
+    
+    bot.sendMessage(msg.chat.id, agentListMessage);
+    console.log("Agents list sent:", agentsList.length, "agents");
+    
+  } catch (error) {
+    console.error("Error fetching agents:", error.message);
+    bot.sendMessage(msg.chat.id, "❌ Lỗi khi lấy danh sách agents: " + error.message);
+  }
+});
+
+// Command: /mode_openai - Switch to OpenAI mode
+bot.onText(/\/mode_openai/, (msg) => {
+  chatMode = 'openai';
+  currentAgentId = null;
+  currentAgentName = null;
+  bot.sendMessage(msg.chat.id, "✅ Đã chuyển sang chế độ **OpenAI** (gpt-4o-mini)\n\n🚀 Bạn có thể bắt đầu chat ngay!");
+  console.log("Switched to OpenAI mode");
+});
+
+// Command: /mode_agent <agent_name> - Switch to agent mode
+bot.onText(/\/mode_agent (.+)/, async (msg, match) => {
+  const agentName = match[1].trim();
+  
+  if (!agentName) {
+    bot.sendMessage(msg.chat.id, "❌ Vui lòng nhập tên agent. Ví dụ: /mode_agent Assistant");
+    return;
+  }
+  
+  try {
+    // If agents list is empty, fetch it first
+    if (agentsList.length === 0) {
+      const API_URL = process.env.API_URL || "http://localhost:3080";
+      const response = await axios.get(
+        `${API_URL}/api/agents?requiredPermission=1`,
+        {
+          headers: {
+            "Authorization": "Bearer " + API_TOKEN,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        }
+      );
+      const data = response.data;
+      if (Array.isArray(data)) {
+        agentsList = data;
+      } else if (data && Array.isArray(data.data)) {
+        agentsList = data.data;
+      } else {
+        agentsList = [];
+      }
+    }
+    
+    // Find agent by name (case-insensitive)
+    const agent = agentsList.find(a => 
+      a.name.toLowerCase() === agentName.toLowerCase() ||
+      a.name.toLowerCase().includes(agentName.toLowerCase())
+    );
+    
+    if (!agent) {
+      bot.sendMessage(msg.chat.id, `❌ Không tìm thấy agent "${agentName}"\n\n💡 Sử dụng /agent để xem danh sách agents`);
+      return;
+    }
+    
+    chatMode = 'agent';
+    currentAgentId = agent.id;
+    currentAgentName = agent.name;
+    
+    bot.sendMessage(msg.chat.id, `✅ Đã chuyển sang chế độ **Agent**\n\n🤖 Agent: **${agent.name}**\n🆔 ID: \`${agent.id}\`\n\n🚀 Bạn có thể bắt đầu chat ngay!`);
+    console.log("Switched to Agent mode:", agent.name, agent.id);
+    
+  } catch (error) {
+    console.error("Error switching to agent:", error.message);
+    bot.sendMessage(msg.chat.id, "❌ Lỗi khi chuyển agent: " + error.message);
+  }
+});
+
 bot.onText(/📝 Conversations/, (msg) => {
   const conversationInfo = `
 📝 **Quản lý Hội thoại**
@@ -133,6 +252,12 @@ bot.onText(/📝 Conversations/, (msg) => {
 
 let parentMessageId = '8f4b7b31-d904-4de8-ab62-d182d67a5224';
 
+// Chat mode: 'openai' or 'agent'
+let chatMode = 'openai';
+let currentAgentId = null;
+let currentAgentName = null;
+let agentsList = []; // Cache agents list
+
 bot.on("message", async (msg) => {
   console.log("Bạn vừa nhận được tin nhắn mới", msg);
   
@@ -155,37 +280,71 @@ bot.on("message", async (msg) => {
       return;
     }
     
-    // Prepare API request payload
-    const payload = {
-      text: messageText,
-      sender: "User",
-      clientTimestamp: new Date().toISOString(),
-      isCreatedByUser: true,
-      parentMessageId: parentMessageId,
-      conversationId: "b248287c-6ac5-4892-8609-eb112dbb5bb7", //msg.chat.id.toString(), // Use chat ID as conversation ID
-      messageId: uuidv4(),
-      error: false,
-      endpoint: "openAI",
-      model: "gpt-4o-mini",
-      resendFiles: true,
-      key: "never",
-      isTemporary: false,
-      isRegenerate: false,
-      isContinued: true,
-      ephemeralAgent: {
-        execute_code: false,
-        web_search: false,
-        file_search: false,
-        artifacts: false,
-        mcp: []
-      }
-    };
-
-    console.log('API_TOKEN', API_TOKEN);
-    
     // Get API URL from environment variable, default to localhost for local development
     const API_URL = process.env.API_URL || "http://localhost:3080";
-    const apiEndpoint = `${API_URL}/api/agents/chat/openAI`;
+    
+    // Prepare API request payload based on current mode
+    let payload;
+    let apiEndpoint;
+    
+    if (chatMode === 'agent' && currentAgentId) {
+      // Agent mode payload
+      payload = {
+        text: messageText,
+        sender: "User",
+        clientTimestamp: new Date().toISOString(),
+        isCreatedByUser: true,
+        parentMessageId: parentMessageId,
+        conversationId: "b248287c-6ac5-4892-8609-eb112dbb5bb7",
+        messageId: uuidv4(),
+        error: false,
+        endpoint: "agents",
+        agent_id: currentAgentId,
+        key: new Date().toISOString(),
+        isTemporary: false,
+        isRegenerate: false,
+        isContinued: false,
+        ephemeralAgent: {
+          execute_code: false,
+          web_search: false,
+          file_search: false,
+          artifacts: false,
+          mcp: []
+        }
+      };
+      apiEndpoint = `${API_URL}/api/agents/chat/agents`;
+      console.log('Using Agent mode with agent:', currentAgentName, currentAgentId);
+    } else {
+      // OpenAI mode payload (default)
+      payload = {
+        text: messageText,
+        sender: "User",
+        clientTimestamp: new Date().toISOString(),
+        isCreatedByUser: true,
+        parentMessageId: parentMessageId,
+        conversationId: "b248287c-6ac5-4892-8609-eb112dbb5bb7",
+        messageId: uuidv4(),
+        error: false,
+        endpoint: "openAI",
+        model: "gpt-4o-mini",
+        resendFiles: true,
+        key: "never",
+        isTemporary: false,
+        isRegenerate: false,
+        isContinued: true,
+        ephemeralAgent: {
+          execute_code: false,
+          web_search: false,
+          file_search: false,
+          artifacts: false,
+          mcp: []
+        }
+      };
+      apiEndpoint = `${API_URL}/api/agents/chat/openAI`;
+      console.log('Using OpenAI mode');
+    }
+
+    console.log('API_TOKEN', API_TOKEN);
     
     console.log('Calling API endpoint:', apiEndpoint);
     
