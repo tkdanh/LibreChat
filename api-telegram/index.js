@@ -831,7 +831,7 @@ bot.on("message", async (msg) => {
     
   } catch (error) {
     console.error("Error calling API:", error.message);
-    bot.sendMessage(chatId, "Xin lỗi, đã có lỗi xảy ra khi xử lý tin nhắn của bạn.");
+    // bot.sendMessage(chatId, "Xin lỗi, đã có lỗi xảy ra khi xử lý tin nhắn của bạn.");
   }
 });
 
