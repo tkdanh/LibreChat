@@ -446,7 +446,7 @@ bot.on("message", async (msg) => {
       messageId: uuidv4(),
       error: false,
       endpoint: "openAI",
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-mini",
       promptPrefix: SYSTEM_PROMPT,
       resendFiles: true,
       key: "never",
@@ -485,7 +485,6 @@ bot.on("message", async (msg) => {
     
     // Extract streamId from response
     const { streamId, conversationId } = initialResponse.data;
-    console.log('Stream ID:', streamId, 'Conversation ID:', conversationId);
     
     // Step 2: Call the stream URL to get actual response
     const streamResponse = await axios.get(
