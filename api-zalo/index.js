@@ -300,6 +300,7 @@ bot.on("message", async (msg) => {
         error: false,
         endpoint: "agents",
         agent_id: currentAgentId,
+        files: [],
         key: new Date().toISOString(),
         isTemporary: false,
         isRegenerate: false,
@@ -398,21 +399,50 @@ bot.on("message", async (msg) => {
             try {
               const parsed = JSON.parse(data);
               
-              // Accumulate the message text from different possible locations
-              if (parsed.responseMessage?.content?.[0]?.text) {
-                fullMessage = parsed.responseMessage.content[0].text;
-              } else if (parsed.content?.[0]?.text) {
-                fullMessage = parsed.content[0].text;
-              } else if (parsed.text) {
+              // Extract text from responseMessage.content array (new format)
+              // Structure: responseMessage.content[{type: "text", text: "..."}]
+              if (parsed.responseMessage?.content && Array.isArray(parsed.responseMessage.content)) {
+                const textContent = parsed.responseMessage.content
+                  .filter(item => item.type === 'text' && item.text)
+                  .map(item => item.text)
+                  .join('');
+                if (textContent) {
+                  fullMessage = textContent;
+                }
+              }
+              // Fallback: check responseMessage.text (if not empty)
+              else if (parsed.responseMessage?.text && parsed.responseMessage.text.trim() !== '') {
+                fullMessage = parsed.responseMessage.text;
+              }
+              // Check top-level content array
+              else if (parsed.content && Array.isArray(parsed.content)) {
+                const textContent = parsed.content
+                  .filter(item => item.type === 'text' && item.text)
+                  .map(item => item.text)
+                  .join('');
+                if (textContent) {
+                  fullMessage = textContent;
+                }
+              }
+              // Check top-level text field
+              else if (parsed.text && typeof parsed.text === 'string' && parsed.text.trim() !== '') {
                 fullMessage = parsed.text;
-              } else if (parsed.content && typeof parsed.content === 'string') {
+              }
+              // Check string content
+              else if (parsed.content && typeof parsed.content === 'string') {
                 fullMessage = parsed.content;
-              } else if (parsed.message) {
+              }
+              // Check message field
+              else if (parsed.message && typeof parsed.message === 'string') {
                 fullMessage = parsed.message;
               }
               
-              // Store the last message data
-              parentMessageId = parsed.responseMessage?.messageId;
+              // Store the last message data and update parentMessageId
+              if (parsed.responseMessage?.messageId) {
+                parentMessageId = parsed.responseMessage.messageId;
+              } else if (parsed.messageId) {
+                parentMessageId = parsed.messageId;
+              }
               lastMessageData = parsed;
               
             } catch (e) {
@@ -433,19 +463,52 @@ bot.on("message", async (msg) => {
       });
     });
     
-    // Use the accumulated message or fallback
-    const finalMessage = fullMessage 
-                      || lastMessageData?.responseMessage?.content?.[0]?.text
-                      || lastMessageData?.content?.[0]?.text 
-                      || lastMessageData?.text 
-                      || lastMessageData?.content 
-                      || "No response from AI";
+    // Use the accumulated message or extract from lastMessageData
+    let finalMessage = fullMessage;
+    
+    // If fullMessage is empty, try to extract from lastMessageData
+    if (!finalMessage && lastMessageData) {
+      // Try responseMessage.content array (new format)
+      if (lastMessageData.responseMessage?.content && Array.isArray(lastMessageData.responseMessage.content)) {
+        const textContent = lastMessageData.responseMessage.content
+          .filter(item => item.type === 'text' && item.text)
+          .map(item => item.text)
+          .join('');
+        if (textContent) {
+          finalMessage = textContent;
+        }
+      }
+      // Try responseMessage.text
+      if (!finalMessage && lastMessageData.responseMessage?.text) {
+        finalMessage = lastMessageData.responseMessage.text;
+      }
+      // Try top-level content array
+      if (!finalMessage && lastMessageData.content && Array.isArray(lastMessageData.content)) {
+        const textContent = lastMessageData.content
+          .filter(item => item.type === 'text' && item.text)
+          .map(item => item.text)
+          .join('');
+        if (textContent) {
+          finalMessage = textContent;
+        }
+      }
+      // Try top-level text
+      if (!finalMessage && lastMessageData.text) {
+        finalMessage = lastMessageData.text;
+      }
+    }
+    
+    // Ensure finalMessage is a non-empty string
+    if (!finalMessage || typeof finalMessage !== 'string' || finalMessage.trim() === '') {
+      finalMessage = "⚠️ Không nhận được phản hồi từ AI. Vui lòng thử lại.";
+      console.log("Warning: Empty response from AI, using fallback message");
+    }
     
     console.log("Final message:", finalMessage);
     // Send the response back to the bot
     bot.sendMessage(msg.chat.id, finalMessage);
     
-    console.log("Response sent successfully:", finalMessage);
+    console.log("Response sent successfully");
     
   } catch (error) {
     console.error("Error calling API:", error.message);

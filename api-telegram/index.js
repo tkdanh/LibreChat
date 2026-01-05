@@ -7,6 +7,14 @@ const { v4: uuidv4 } = require("uuid");
 let TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 // Global API_TOKEN (can be updated via /api_token command)
 let API_TOKEN = process.env.API_TOKEN;
+// Conversation ID from environment
+let CONVERSATION_ID = process.env.CONVERSATION_ID || "b248287c-6ac5-4892-8609-eb112dbb5bb7";
+
+// Chat mode: 'openai' or 'agent'
+let chatMode = 'openai';
+let currentAgentId = null;
+let currentAgentName = null;
+let agentsList = []; // Cache agents list
 
 // System prompt for bot character/personality (can be updated via /system command)
 let SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || `
@@ -286,12 +294,151 @@ bot.onText(/\/help/, (msg) => {
 /info - Thông tin về bot
 /system - Xem system prompt hiện tại
 /system <prompt> - Thay đổi system prompt
+/agent - Xem danh sách AI agents
+/mode_openai - Chuyển sang chế độ OpenAI
+/mode_agent <tên> - Chuyển sang chế độ Agent
+/mode - Xem chế độ chat hiện tại
 
 💡 **Cách sử dụng:**
 Gửi bất kỳ tin nhắn nào để chat với AI!
   `.trim();
   
   bot.sendMessage(chatId, helpMessage, { parse_mode: "Markdown" });
+});
+
+// Command: /agent - List all AI agents
+bot.onText(/\/agent/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const API_URL = process.env.API_URL || "http://localhost:3080";
+    const response = await axios.get(
+      `${API_URL}/api/agents?requiredPermission=1`,
+      {
+        headers: {
+          "Authorization": "Bearer " + API_TOKEN,
+          "Content-Type": "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      }
+    );
+    
+    // Handle different response structures (array or object with agents property)
+    const data = response.data;
+    console.log('Agents API response:', JSON.stringify(data).substring(0, 500));
+    
+    if (Array.isArray(data)) {
+      agentsList = data;
+    } else if (data && Array.isArray(data.data)) {
+      agentsList = data.data;
+    } else {
+      agentsList = [];
+    }
+    
+    if (agentsList.length === 0) {
+      bot.sendMessage(chatId, "❌ Không có agent nào được tìm thấy.");
+      return;
+    }
+    
+    let agentListMessage = "🤖 **Danh sách AI Agents:**\n\n";
+    agentsList.forEach((agent, index) => {
+      agentListMessage += `${index + 1}. **${agent.name}**\n   ID: \`${agent.id}\`\n`;
+      if (agent.description) {
+        agentListMessage += `   📝 ${agent.description}\n`;
+      }
+      agentListMessage += "\n";
+    });
+    
+    agentListMessage += "\n💡 Sử dụng /mode\\_agent <tên\\_agent> để chọn agent";
+    agentListMessage += "\n💡 Sử dụng /mode\\_openai để dùng OpenAI mặc định";
+    
+    bot.sendMessage(chatId, agentListMessage, { parse_mode: "Markdown" });
+    console.log("Agents list sent:", agentsList.length, "agents");
+    
+  } catch (error) {
+    console.error("Error fetching agents:", error.message);
+    bot.sendMessage(chatId, "❌ Lỗi khi lấy danh sách agents: " + error.message);
+  }
+});
+
+// Command: /mode - Show current chat mode
+bot.onText(/\/mode$/, (msg) => {
+  const chatId = msg.chat.id;
+  let modeInfo = "";
+  if (chatMode === 'agent' && currentAgentId) {
+    modeInfo = `🤖 **Chế độ hiện tại:** Agent\n\n📌 Agent: **${currentAgentName}**\n🆔 ID: \`${currentAgentId}\``;
+  } else {
+    modeInfo = `🤖 **Chế độ hiện tại:** OpenAI (gpt-4o-mini)`;
+  }
+  modeInfo += `\n\n📝 Conversation ID: \`${CONVERSATION_ID}\``;
+  bot.sendMessage(chatId, modeInfo, { parse_mode: "Markdown" });
+});
+
+// Command: /mode_openai - Switch to OpenAI mode
+bot.onText(/\/mode_openai/, (msg) => {
+  const chatId = msg.chat.id;
+  chatMode = 'openai';
+  currentAgentId = null;
+  currentAgentName = null;
+  bot.sendMessage(chatId, "✅ Đã chuyển sang chế độ **OpenAI** (gpt-4o-mini)\n\n🚀 Bạn có thể bắt đầu chat ngay!", { parse_mode: "Markdown" });
+  console.log("Switched to OpenAI mode");
+});
+
+// Command: /mode_agent <agent_name> - Switch to agent mode
+bot.onText(/\/mode_agent (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const agentName = match[1].trim();
+  
+  if (!agentName) {
+    bot.sendMessage(chatId, "❌ Vui lòng nhập tên agent. Ví dụ: /mode\\_agent Assistant", { parse_mode: "Markdown" });
+    return;
+  }
+  
+  try {
+    // If agents list is empty, fetch it first
+    if (agentsList.length === 0) {
+      const API_URL = process.env.API_URL || "http://localhost:3080";
+      const response = await axios.get(
+        `${API_URL}/api/agents?requiredPermission=1`,
+        {
+          headers: {
+            "Authorization": "Bearer " + API_TOKEN,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        }
+      );
+      const data = response.data;
+      if (Array.isArray(data)) {
+        agentsList = data;
+      } else if (data && Array.isArray(data.data)) {
+        agentsList = data.data;
+      } else {
+        agentsList = [];
+      }
+    }
+    
+    // Find agent by name (case-insensitive)
+    const agent = agentsList.find(a => 
+      a.name.toLowerCase() === agentName.toLowerCase() ||
+      a.name.toLowerCase().includes(agentName.toLowerCase())
+    );
+    
+    if (!agent) {
+      bot.sendMessage(chatId, `❌ Không tìm thấy agent "${agentName}"\n\n💡 Sử dụng /agent để xem danh sách agents`);
+      return;
+    }
+    
+    chatMode = 'agent';
+    currentAgentId = agent.id;
+    currentAgentName = agent.name;
+    
+    bot.sendMessage(chatId, `✅ Đã chuyển sang chế độ **Agent**\n\n🤖 Agent: **${agent.name}**\n🆔 ID: \`${agent.id}\`\n\n🚀 Bạn có thể bắt đầu chat ngay!`, { parse_mode: "Markdown" });
+    console.log("Switched to Agent mode:", agent.name, agent.id);
+    
+  } catch (error) {
+    console.error("Error switching to agent:", error.message);
+    bot.sendMessage(chatId, "❌ Lỗi khi chuyển agent: " + error.message);
+  }
 });
 
 bot.onText(/\/info/, (msg) => {
@@ -330,6 +477,10 @@ bot.on("callback_query", (callbackQuery) => {
 /info - Thông tin về bot
 /system - Xem system prompt hiện tại
 /system <prompt> - Thay đổi system prompt
+/agent - Xem danh sách AI agents
+/mode\\_openai - Chuyển sang chế độ OpenAI
+/mode\\_agent <tên> - Chuyển sang chế độ Agent
+/mode - Xem chế độ chat hiện tại
 
 💡 **Cách sử dụng:**
 Gửi bất kỳ tin nhắn nào để chat với AI!
@@ -365,11 +516,20 @@ function sendInfoMessage(chatId) {
 }
 
 function sendConversationsInfo(chatId) {
+  let modeInfo = "";
+  if (chatMode === 'agent' && currentAgentId) {
+    modeInfo = `🤖 Chế độ: **Agent** (${currentAgentName})`;
+  } else {
+    modeInfo = `🤖 Chế độ: **OpenAI** (gpt-4o-mini)`;
+  }
+  
   const conversationInfo = `
 📝 **Quản lý Hội thoại**
 
 📊 Conversation ID hiện tại:
-\`b248287c-6ac5-4892-8609-eb112dbb5bb7\`
+\`${CONVERSATION_ID}\`
+
+${modeInfo}
 
 💡 **Tính năng:**
 • Cuộc trò chuyện của bạn được lưu liên tục
@@ -390,33 +550,8 @@ let parentMessageId = '8f4b7b31-d904-4de8-ab62-d182d67a5224';
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const messageText = msg.text;
-  const chatType = msg.chat.type; // 'private', 'group', 'supergroup', 'channel'
   
   console.log("Received message:", msg);
-  
-  // Skip if no text
-  if (!messageText) {
-    console.log("No text found in message");
-    return;
-  }
-  
-  // Skip commands
-  if (messageText.startsWith("/")) {
-    console.log("Skipping command");
-    return;
-  }
-  
-  // In groups, only respond if bot is @mentioned or replied to
-  if (chatType === 'group' || chatType === 'supergroup') {
-    const isMentioned = botInfo && messageText.includes(`@${botInfo.username}`);
-    const isReplyToBot = msg.reply_to_message && msg.reply_to_message.from?.id === botInfo?.id;
-    
-    if (!isMentioned && !isReplyToBot) {
-      console.log("Skipping group message - bot not mentioned or replied to");
-      return;
-    }
-    console.log("Bot was mentioned or replied to in group");
-  }
   
   try {
     // Send typing indicator
@@ -435,40 +570,71 @@ bot.on("message", async (msg) => {
     
     console.log('Formatted message:', formattedMessage);
     
-    // Prepare API request payload
-    const payload = {
-      text: formattedMessage,
-      sender: "User",
-      clientTimestamp: new Date().toISOString(),
-      isCreatedByUser: true,
-      parentMessageId: parentMessageId,
-      conversationId: "b248287c-6ac5-4892-8609-eb112dbb5bb7",
-      messageId: uuidv4(),
-      error: false,
-      endpoint: "openAI",
-      model: "gpt-4.1-mini",
-      promptPrefix: SYSTEM_PROMPT,
-      resendFiles: true,
-      key: "never",
-      isTemporary: false,
-      isRegenerate: false,
-      isContinued: true,
-      ephemeralAgent: {
-        execute_code: false,
-        web_search: false,
-        file_search: false,
-        artifacts: false,
-        mcp: []
-      }
-    };
-
-    console.log('API_TOKEN', API_TOKEN);
-    
     // Get API URL from environment variable, default to localhost for local development
     const API_URL = process.env.API_URL || "http://localhost:3080";
-    const apiEndpoint = `${API_URL}/api/agents/chat/openAI`;
     
-    console.log('Calling API endpoint:', apiEndpoint);
+    // Prepare API request payload based on current mode
+    let payload;
+    let apiEndpoint;
+    
+    if (chatMode === 'agent' && currentAgentId) {
+      // Agent mode payload
+      payload = {
+        text: formattedMessage,
+        sender: "User",
+        clientTimestamp: new Date().toISOString(),
+        isCreatedByUser: true,
+        parentMessageId: parentMessageId,
+        conversationId: CONVERSATION_ID,
+        messageId: uuidv4(),
+        error: false,
+        endpoint: "agents",
+        agent_id: currentAgentId,
+        files: [],
+        key: new Date().toISOString(),
+        isTemporary: false,
+        isRegenerate: false,
+        isContinued: false,
+        ephemeralAgent: {
+          execute_code: false,
+          web_search: false,
+          file_search: false,
+          artifacts: false,
+          mcp: []
+        }
+      };
+      apiEndpoint = `${API_URL}/api/agents/chat/agents`;
+      console.log('Using Agent mode with agent:', currentAgentName, currentAgentId);
+    } else {
+      // OpenAI mode payload (default)
+      payload = {
+        text: formattedMessage,
+        sender: "User",
+        clientTimestamp: new Date().toISOString(),
+        isCreatedByUser: true,
+        parentMessageId: parentMessageId,
+        conversationId: CONVERSATION_ID,
+        messageId: uuidv4(),
+        error: false,
+        endpoint: "openAI",
+        model: "gpt-4.1-mini",
+        promptPrefix: SYSTEM_PROMPT,
+        resendFiles: true,
+        key: "never",
+        isTemporary: false,
+        isRegenerate: false,
+        isContinued: true,
+        ephemeralAgent: {
+          execute_code: false,
+          web_search: false,
+          file_search: false,
+          artifacts: false,
+          mcp: []
+        }
+      };
+      apiEndpoint = `${API_URL}/api/agents/chat/openAI`;
+      console.log('Using OpenAI mode');
+    }
     
     // Step 1: Call initial API to get stream URL
     const initialResponse = await axios.post(
@@ -485,6 +651,7 @@ bot.on("message", async (msg) => {
     
     // Extract streamId from response
     const { streamId, conversationId } = initialResponse.data;
+    console.log('Stream ID:', streamId, 'Conversation ID:', conversationId);
     
     // Step 2: Call the stream URL to get actual response
     const streamResponse = await axios.get(
@@ -506,6 +673,10 @@ bot.on("message", async (msg) => {
     await new Promise((resolve, reject) => {
       streamResponse.data.on('data', (chunk) => {
         const chunkStr = chunk.toString();
+        // Debug: log raw chunk for agents mode
+        if (chatMode === 'agent') {
+          console.log('Agent stream chunk:', chunkStr.substring(0, 500));
+        }
 
         const lines = chunkStr.split('\n');
         
@@ -519,21 +690,70 @@ bot.on("message", async (msg) => {
             try {
               const parsed = JSON.parse(data);
               
-              // Accumulate the message text from different possible locations
-              if (parsed.responseMessage?.content?.[0]?.text) {
-                fullMessage = parsed.responseMessage.content[0].text;
-              } else if (parsed.content?.[0]?.text) {
-                fullMessage = parsed.content[0].text;
-              } else if (parsed.text) {
-                fullMessage = parsed.text;
-              } else if (parsed.content && typeof parsed.content === 'string') {
-                fullMessage = parsed.content;
-              } else if (parsed.message) {
-                fullMessage = parsed.message;
+              // Debug: log parsed data structure for agents
+              if (chatMode === 'agent' && !fullMessage) {
+                console.log('Agent parsed data keys:', Object.keys(parsed));
+                if (parsed.responseMessage) {
+                  console.log('responseMessage keys:', Object.keys(parsed.responseMessage));
+                }
               }
               
-              // Store the last message data
-              parentMessageId = parsed.responseMessage?.messageId;
+              // Extract text from responseMessage.content array (new format)
+              // Structure: responseMessage.content[{type: "text", text: "..."}]
+              if (parsed.responseMessage?.content && Array.isArray(parsed.responseMessage.content)) {
+                const textContent = parsed.responseMessage.content
+                  .filter(item => item.type === 'text' && item.text)
+                  .map(item => item.text)
+                  .join('');
+                if (textContent) {
+                  fullMessage = textContent;
+                }
+              }
+              // Fallback: check responseMessage.text (if not empty)
+              else if (parsed.responseMessage?.text && parsed.responseMessage.text.trim() !== '') {
+                fullMessage = parsed.responseMessage.text;
+              }
+              // Check top-level content array
+              else if (parsed.content && Array.isArray(parsed.content)) {
+                const textContent = parsed.content
+                  .filter(item => item.type === 'text' && item.text)
+                  .map(item => item.text)
+                  .join('');
+                if (textContent) {
+                  fullMessage = textContent;
+                }
+              }
+              // Check top-level text field
+              else if (parsed.text && typeof parsed.text === 'string' && parsed.text.trim() !== '') {
+                fullMessage = parsed.text;
+              }
+              // Check string content
+              else if (parsed.content && typeof parsed.content === 'string') {
+                fullMessage = parsed.content;
+              }
+              // Check message field
+              else if (parsed.message && typeof parsed.message === 'string') {
+                fullMessage = parsed.message;
+              }
+              // Handle streaming delta format
+              else if (parsed.delta?.content) {
+                fullMessage += parsed.delta.content;
+              }
+              // Handle OpenAI streaming format
+              else if (parsed.choices?.[0]?.delta?.content) {
+                fullMessage += parsed.choices[0].delta.content;
+              }
+              // Handle OpenAI complete message format
+              else if (parsed.choices?.[0]?.message?.content) {
+                fullMessage = parsed.choices[0].message.content;
+              }
+              
+              // Store the last message data and update parentMessageId
+              if (parsed.responseMessage?.messageId) {
+                parentMessageId = parsed.responseMessage.messageId;
+              } else if (parsed.messageId) {
+                parentMessageId = parsed.messageId;
+              }
               lastMessageData = parsed;
               
             } catch (e) {
@@ -544,7 +764,7 @@ bot.on("message", async (msg) => {
       });
       
       streamResponse.data.on('end', () => {
-        console.log("Stream ended");
+        console.log("Stream ended, fullMessage length:", fullMessage.length);
         resolve();
       });
       
@@ -554,19 +774,60 @@ bot.on("message", async (msg) => {
       });
     });
     
-    // Use the accumulated message or fallback
-    const finalMessage = fullMessage 
-                      || lastMessageData?.responseMessage?.content?.[0]?.text
-                      || lastMessageData?.content?.[0]?.text 
-                      || lastMessageData?.text 
-                      || lastMessageData?.content 
-                      || "No response from AI";
+    // Debug: log lastMessageData structure
+    if (lastMessageData) {
+      console.log("Last message data keys:", Object.keys(lastMessageData));
+      if (lastMessageData.responseMessage) {
+        console.log("responseMessage.content:", JSON.stringify(lastMessageData.responseMessage.content).substring(0, 300));
+      }
+    }
+    
+    // Use the accumulated message or extract from lastMessageData
+    let finalMessage = fullMessage;
+    
+    // If fullMessage is empty, try to extract from lastMessageData
+    if (!finalMessage && lastMessageData) {
+      // Try responseMessage.content array (new format)
+      if (lastMessageData.responseMessage?.content && Array.isArray(lastMessageData.responseMessage.content)) {
+        const textContent = lastMessageData.responseMessage.content
+          .filter(item => item.type === 'text' && item.text)
+          .map(item => item.text)
+          .join('');
+        if (textContent) {
+          finalMessage = textContent;
+        }
+      }
+      // Try responseMessage.text
+      if (!finalMessage && lastMessageData.responseMessage?.text) {
+        finalMessage = lastMessageData.responseMessage.text;
+      }
+      // Try top-level content array
+      if (!finalMessage && lastMessageData.content && Array.isArray(lastMessageData.content)) {
+        const textContent = lastMessageData.content
+          .filter(item => item.type === 'text' && item.text)
+          .map(item => item.text)
+          .join('');
+        if (textContent) {
+          finalMessage = textContent;
+        }
+      }
+      // Try top-level text
+      if (!finalMessage && lastMessageData.text) {
+        finalMessage = lastMessageData.text;
+      }
+    }
+    
+    // Ensure finalMessage is a non-empty string
+    if (!finalMessage || typeof finalMessage !== 'string' || finalMessage.trim() === '') {
+      finalMessage = "⚠️ Không nhận được phản hồi từ AI. Vui lòng thử lại.";
+      console.log("Warning: Empty response from AI, using fallback message");
+    }
     
     console.log("Final message:", finalMessage);
     // Send the response back to the user
     bot.sendMessage(chatId, finalMessage);
     
-    console.log("Response sent successfully:", finalMessage);
+    console.log("Response sent successfully");
     
   } catch (error) {
     console.error("Error calling API:", error.message);
